@@ -192,7 +192,7 @@ html_content = """<!DOCTYPE html>
         font-size:.8rem;
     }
     thead th{
-        background:#002b5c;
+        background:var(--azul-escuro);
         color:#fff;
         font-weight:600;
         text-align:center;
@@ -288,7 +288,7 @@ html_content = """<!DOCTYPE html>
     <section class="card">
         <h2 class="titulo-bloco">📈 Estatísticas descritivas por governo</h2>
         <div class="sub-bloco">
-            Média, mínimo, máximo, variação interna e variação em relação ao governo anterior, com base no recorte atual.
+            Média, mínimo, máximo, variação interna e variação em relação ao governo anterior (com base no recorte atual).
         </div>
 
         <div id="tabela-wrapper">
@@ -313,7 +313,7 @@ html_content = """<!DOCTYPE html>
 </main>
 
 <footer id="rodape">
-    Fonte: sua base de dados (CSV com colunas Ano, Abrangência, Variável, Valor). Painel exploratório.<br/>
+    Fonte: CSV com colunas Ano, Abrangência, Variável, Valor. Painel exploratório.<br/>
     Cálculos: Lucas Cunha.<br/>
     <span id="data-atualizacao"></span>
 </footer>
@@ -402,16 +402,9 @@ function calcTendencia(y){
     return x.map(xi=>a*xi+b);
 }
 
-// normalização simples para comparar nomes de colunas
-function normHeader(s){
-    return s.toString().toLowerCase().replace(/\\s+/g,"");
-}
-
 // ----------------------
-// 4. Carregar CSV
+// 4. Carregar CSV (layout fixo Ano / Abrangência / Variável / Valor)
 // ----------------------
-// Espera-se um arquivo chamado "dados_painel_pnad.csv"
-// mas agora detectamos as colunas de forma robusta
 Papa.parse("dados_painel_pnad.csv", {
     download: true,
     header: true,
@@ -419,43 +412,19 @@ Papa.parse("dados_painel_pnad.csv", {
     skipEmptyLines: true,
     complete: function(res){
         const rows = res.data || [];
-        if(!rows.length){
-            console.warn("Nenhuma linha lida do CSV.");
-            return;
-        }
-
-        const colNames = Object.keys(rows[0]);
-        console.log("Colunas detectadas:", colNames);
-
-        function findCol(possiblePatterns){
-            for(const c of colNames){
-                const n = normHeader(c);
-                for(const p of possiblePatterns){
-                    if(n.indexOf(p) !== -1){
-                        return c;
-                    }
-                }
-            }
-            return null;
-        }
-
-        const colAno    = findCol(["ano"]);
-        const colAbrang = findCol(["abrang"]);
-        const colVar    = findCol(["vari"]);
-        const colValor  = findCol(["valor"]);
-
-        console.log("Mapeamento de colunas:", {colAno, colAbrang, colVar, colValor});
+        console.log("Linhas lidas do CSV:", rows.length);
 
         DADOS = [];
 
         rows.forEach(row => {
-            const periodo = colAno ? (row[colAno] || "").toString().trim() : "";
-            const abrang  = colAbrang ? (row[colAbrang] || "").toString().trim() : "";
-            const variavel= colVar ? (row[colVar] || "").toString().trim() : "";
-            let   valorStr= colValor ? (row[colValor] || "").toString().trim() : "";
+            const periodo = (row["Ano"] || "").toString().trim();
+            const abrang  = (row["Abrangência"] || "").toString().trim();
+            const variavel= (row["Variável"] || "").toString().trim();
+            let   valorStr= (row["Valor"] || "").toString().trim();
 
             if(!periodo || !abrang || !variavel || !valorStr) return;
 
+            // trocar vírgula por ponto, se for decimal brasileiro
             valorStr = valorStr.replace(",", ".");
             const valor = parseFloat(valorStr);
             if(isNaN(valor)) return;
@@ -473,10 +442,10 @@ Papa.parse("dados_painel_pnad.csv", {
             });
         });
 
-        console.log("Total de registros válidos em DADOS:", DADOS.length);
+        console.log("Registros válidos carregados:", DADOS.length);
 
         if(!DADOS.length){
-            alert("Não foi possível carregar dados válidos do CSV. Verifique o arquivo 'dados_painel_pnad.csv'.");
+            alert("Nenhuma linha válida foi encontrada.\\n\\nVerifique se o arquivo 'dados_painel_pnad.csv' tem as colunas:\\nAno, Abrangência, Variável, Valor\\n(e se os valores numéricos usam vírgula ou ponto).");
             return;
         }
 
@@ -573,16 +542,20 @@ function atualizarTudo(){
     const variavel = document.getElementById("variavel").value;
     const abrangencia = document.querySelector("input[name='abrangencia']:checked").value;
 
+    // base filtrada por variável / abrangência
     let base = DADOS.filter(d =>
         d.variavel === variavel &&
         d.abrangencia === abrangencia
     );
 
+    // ordena temporalmente
     base = base.slice().sort((a,b)=> a.dataDate - b.dataDate);
 
+    // info de governos com índices sobre a série COMPLETA (antes do corte por governoAtivo)
     const govDefs = GOVERNOS[abrangencia];
     let govInfos = calcularIntervalosGovernos(govDefs, base);
 
+    // se um governo foi clicado, restringe a base
     if(governoAtivo){
         const gsel = govInfos.find(g => g.nome === governoAtivo);
         if(gsel){
@@ -593,9 +566,11 @@ function atualizarTudo(){
         }
     }
 
-    const xLabels = base.map(row => periodoLabel(row));
+    // montar eixos x/y
+    const xLabels = base.map(row => periodoLabel(row)); // "2012 T1" etc
     const yVals = base.map(row => row.valor).filter(v=>!isNaN(v));
 
+    // média e tendência
     let mediaVal = null;
     let tendenciaVals = [];
     if(yVals.length>0){
@@ -603,6 +578,7 @@ function atualizarTudo(){
         tendenciaVals = calcTendencia(yVals);
     }
 
+    // shapes de governo: se governoAtivo != null, só aquele governo vira shape
     const shapes = [];
     const govsVisiveis = governoAtivo
         ? govInfos.filter(g=>g.nome===governoAtivo)
@@ -626,6 +602,7 @@ function atualizarTudo(){
         }
     });
 
+    // montar traces
     const traces = [{
         x:xLabels,
         y:yVals,
@@ -652,20 +629,30 @@ function atualizarTudo(){
         });
     }
 
+    // desenhar gráfico
     Plotly.newPlot('grafico', traces, {
         title: { text: quebrarTitulo(abrangencia, variavel), x:0.5, xanchor:'center' },
-        xaxis:{ title:'Período', type:'category', tickangle:-60 },
-        yaxis:{ title:'Valor' },
+        xaxis:{
+            title:'Período',
+            type:'category',
+            tickangle:-60
+        },
+        yaxis:{
+            title:'Valor'
+        },
         shapes:shapes,
         height:500,
         margin:{l:60,r:20,t:90,b:120},
         legend:{orientation:'v'}
-    },{
+    }, {
         displaylogo:false,
         responsive:true
     });
 
+    // montar legenda lateral (botões de governo)
     montarLegendaGovernos(govInfos);
+
+    // montar tabela dinâmica
     montarTabela(govInfos, base);
 }
 
@@ -678,6 +665,8 @@ function montarLegendaGovernos(govInfos){
     painel.innerHTML = "";
 
     govInfos.forEach(g=>{
+        // se esse governo não tem nenhum ponto na série filtrada por variável/abrangência,
+        // g.idxInicio será null => não mostra
         if(g.idxInicio===null) return;
 
         const div = document.createElement("div");
@@ -689,9 +678,9 @@ function montarLegendaGovernos(govInfos){
 
         div.addEventListener("click", ()=>{
             if(governoAtivo === g.nome){
-                governoAtivo = null;
+                governoAtivo = null; // desativa filtro
             } else {
-                governoAtivo = g.nome;
+                governoAtivo = g.nome; // ativa filtro naquele governo
             }
             atualizarTudo();
         });
@@ -709,15 +698,18 @@ function montarTabela(govInfos, baseFiltradaFinal){
     const tbody = document.querySelector("#tabela-estat tbody");
     tbody.innerHTML = "";
 
+    // se existe governoAtivo, só tabela desse governo
     const listaGov = governoAtivo
         ? govInfos.filter(g=>g.nome===governoAtivo)
         : govInfos;
 
+    // primeiro calculamos stats básicos (média, min, max, var interna)
     const statsPorGoverno = [];
 
     listaGov.forEach(g=>{
         if(g.idxInicio===null) return;
 
+        // subset de linhas da base filtrada FINAL (que já pode estar recortada por governoAtivo)
         const subset = baseFiltradaFinal.filter(row=>{
             const dt = row.dataDate;
             return dt>=g.inicioDate && dt<g.fimDate;
@@ -752,6 +744,7 @@ function montarTabela(govInfos, baseFiltradaFinal){
         });
     });
 
+    // agora calculamos a variação vs. governo anterior
     for(let i=0;i<statsPorGoverno.length;i++){
         if(i===0){
             statsPorGoverno[i].variacaoVsAnterior = "–";
@@ -767,6 +760,7 @@ function montarTabela(govInfos, baseFiltradaFinal){
         }
     }
 
+    // preencher tabela
     statsPorGoverno.forEach(st=>{
         const linha = document.createElement("tr");
         linha.innerHTML = `
@@ -804,4 +798,5 @@ with open("/mnt/data/index.html", "w", encoding="utf-8") as f:
     f.write(html_content)
 
 "/mnt/data/index.html"
+
 
