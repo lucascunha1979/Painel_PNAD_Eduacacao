@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Painel Interativo • Séries trimestrais por governo</title>
+
+<!-- Bibliotecas -->
+<script src="https://cdn.plot.ly/plotly-2.31.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+<style>
+    :root {
+        --azul-escuro:#002b5c;
+        --cinza-fundo:#f5f6fa;
+        --borda:#dcdfe6;
+    }
+
+    body {
+        margin:0;
+        background:var(--cinza-fundo);
+        font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+        color:#222;
+    }
+
+    header{
+        background:var(--azul-escuro);
+        color:#fff;
+        padding:16px 24px;
+        text-align:center;
+        font-size:1.05rem;
+        font-weight:600;
+        letter-spacing:.02em;
+    }
+
+    main{
+        max-width:1400px;
+        margin:24px auto 64px auto;
+        padding:0 16px;
+        display:flex;
+        flex-direction:column;
+        gap:24px;
+    }
+
+    .card{
+        background:#fff;
+        border-radius:12px;
+        border:1px solid var(--borda);
+        box-shadow:0 8px 24px rgba(0,0,0,.04);
+        padding:16px 20px 20px 20px;
+    }
+
+    .titulo-bloco{
+        font-size:1rem;
+        font-weight:600;
+        color:var(--azul-escuro);
+        margin:0 0 12px 0;
+        line-height:1.3;
+        text-align:center;
+    }
+    .sub-bloco{
+        font-size:.8rem;
+        font-weight:400;
+        color:#555;
+        text-align:center;
+        margin-top:-6px;
+        margin-bottom:16px;
+        line-height:1.4;
+    }
+
+    /* filtros */
+    #filtros{
+        display:flex;
+        flex-wrap:wrap;
+        gap:16px;
+        justify-content:center;
+        align-items:flex-end;
+    }
+    .filtro-group{
+        display:flex;
+        flex-direction:column;
+        font-size:.8rem;
+        color:#444;
+        min-width:200px;
+    }
+    .filtro-group label{
+        font-weight:500;
+        margin-bottom:4px;
+    }
+    select, .radio-row{
+        background:#fff;
+        border:1px solid var(--borda);
+        border-radius:8px;
+        padding:8px 10px;
+        font-size:.8rem;
+        color:#222;
+    }
+    .radio-row{
+        display:flex;
+        gap:10px;
+        flex-wrap:wrap;
+    }
+    .radio-row label{
+        display:flex;
+        align-items:center;
+        gap:4px;
+        cursor:pointer;
+        font-weight:500;
+    }
+    .radio-row input{
+        cursor:pointer;
+    }
+
+    /* wrapper gráfico + legenda governos */
+    #viz-wrapper{
+        display:flex;
+        flex-wrap:wrap;
+        gap:16px;
+    }
+    #grafico-wrapper{
+        flex:1;
+        min-width:300px;
+    }
+    #grafico{
+        width:100%;
+        min-height:480px;
+    }
+
+    /* painel governos lateral */
+    #painel-governos-wrapper{
+        width:220px;
+        min-width:220px;
+        border-left:1px solid var(--borda);
+        padding-left:16px;
+        display:flex;
+        flex-direction:column;
+        gap:8px;
+    }
+    #painel-governos-header{
+        display:flex;
+        justify-content:space-between;
+        align-items:flex-start;
+    }
+    #painel-governos-header span{
+        font-size:.8rem;
+        font-weight:600;
+        color:#333;
+    }
+    #reset-governo{
+        font-size:.7rem;
+        background:#fff;
+        border:1px solid var(--borda);
+        border-radius:6px;
+        padding:3px 6px;
+        cursor:pointer;
+        line-height:1.2;
+        display:none;
+    }
+    #reset-governo:hover{
+        background:#f0f0f0;
+    }
+
+    #painel-governos{
+        display:flex;
+        flex-direction:column;
+        gap:6px;
+    }
+    .gov-item{
+        border-radius:8px;
+        padding:8px 10px;
+        font-size:.75rem;
+        line-height:1.3;
+        color:#fff;
+        font-weight:500;
+        cursor:pointer;
+        border:2px solid transparent;
+        user-select:none;
+    }
+    .gov-item.ativo{
+        border-color:#000;
+        box-shadow:0 0 0 2px #000 inset;
+    }
+
+    /* tabela */
+    #tabela-wrapper{
+        overflow-x:auto;
+    }
+    table{
+        width:100%;
+        border-collapse:collapse;
+        min-width:700px;
+        font-size:.8rem;
+    }
+    thead th{
+        background:var(--azul-escuro);
+        color:#fff;
+        font-weight:600;
+        text-align:center;
+        padding:8px 6px;
+        white-space:nowrap;
+    }
+    tbody td{
+        text-align:center;
+        padding:8px 6px;
+        border-bottom:1px solid var(--borda);
+        background:#fff;
+        color:#333;
+    }
+    tbody tr:hover td{
+        background:#f9fbff;
+    }
+
+    footer{
+        text-align:center;
+        font-size:.7rem;
+        color:#777;
+        padding:24px;
+    }
+
+    @media(max-width:900px){
+        #viz-wrapper{
+            flex-direction:column;
+        }
+        #painel-governos-wrapper{
+            width:100%;
+            min-width:auto;
+            border-left:none;
+            border-top:1px solid var(--borda);
+            padding-left:0;
+            padding-top:12px;
+        }
+        #painel-governos-header{
+            flex-wrap:wrap;
+            gap:8px;
+        }
+    }
+</style>
+</head>
+
+<body>
+<header>📊 Painel Interativo · Séries trimestrais por governo</header>
+
+<main>
+
+    <!-- FILTROS -->
+    <section class="card">
+        <h2 class="titulo-bloco">Séries trimestrais – Brasil e Rio Grande do Sul (2012 T1 – 2025 T2)</h2>
+        <div class="sub-bloco">
+            Selecione a variável e a abrangência. O painel destaca os períodos de cada governo e apresenta estatísticas descritivas.
+        </div>
+
+        <div id="filtros">
+
+            <div class="filtro-group">
+                <label for="variavel">Variável</label>
+                <select id="variavel"></select>
+            </div>
+
+            <div class="filtro-group">
+                <label>Abrangência</label>
+                <div class="radio-row" id="abrangencia-row">
+                    <label><input type="radio" name="abrangencia" value="Brasil" checked/> Brasil</label>
+                    <label><input type="radio" name="abrangencia" value="Rio Grande do Sul"/> RS</label>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- GRÁFICO + LEGENDA -->
+    <section class="card">
+        <div id="viz-wrapper">
+            <div id="grafico-wrapper">
+                <div id="grafico"></div>
+            </div>
+
+            <aside id="painel-governos-wrapper">
+                <div id="painel-governos-header">
+                    <span>Governos</span>
+                    <button id="reset-governo" title="Voltar para todos os governos">Mostrar todos</button>
+                </div>
+                <div id="painel-governos"></div>
+            </aside>
+        </div>
+    </section>
+
+    <!-- TABELA -->
+    <section class="card">
+        <h2 class="titulo-bloco">📈 Estatísticas descritivas por governo</h2>
+        <div class="sub-bloco">
+            Média, mínimo, máximo, variação interna e variação em relação ao governo anterior, com base no recorte atual.
+        </div>
+
+        <div id="tabela-wrapper">
+            <table id="tabela-estat">
+                <thead>
+                    <tr>
+                        <th>Governo</th>
+                        <th>Início</th>
+                        <th>Fim</th>
+                        <th>Média</th>
+                        <th>Mínimo</th>
+                        <th>Máximo</th>
+                        <th>Variação (%)</th>
+                        <th>Variação vs. governo anterior (%)</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </section>
+
+</main>
+
+<footer id="rodape">
+    Fonte: sua base de dados (CSV com colunas Ano, Abrangência, Variável, Valor). Painel exploratório.<br/>
+    Cálculos: Lucas Cunha.<br/>
+    <span id="data-atualizacao"></span>
+</footer>
+
+<script>
+// ----------------------
+// 1. Configuração governos
+// ----------------------
+const GOVERNOS = {
+    "Brasil": [
+        { nome: "Dilma Rousseff (1º)", inicio: "2011-01-01", cor: "#d62728" },
+        { nome: "Dilma Rousseff (2º)", inicio: "2015-01-01", cor: "#ff7f0e" },
+        { nome: "Michel Temer",        inicio: "2016-08-31", cor: "#1f77b4" },
+        { nome: "Jair Bolsonaro",      inicio: "2019-01-01", cor: "#2ca02c" },
+        { nome: "Luiz Inácio Lula da Silva", inicio: "2023-01-01", cor: "#9467bd" }
+    ],
+    "Rio Grande do Sul": [
+        { nome: "Tarso Genro",              inicio: "2011-01-01", cor: "#d62728" },
+        { nome: "José Ivo Sartori",         inicio: "2015-01-01", cor: "#1f77b4" },
+        { nome: "Eduardo Leite (1º)",       inicio: "2019-01-01", cor: "#2ca02c" },
+        { nome: "Ranolfo Vieira Júnior",    inicio: "2022-03-31", cor: "#ff7f0e" },
+        { nome: "Eduardo Leite (2º)",       inicio: "2023-01-01", cor: "#9467bd" }
+    ]
+};
+
+// ----------------------
+// 2. Estado global
+// ----------------------
+let DADOS = [];
+let governoAtivo = null; // se != null, filtra gráfico/tabela naquele governo
+
+// ----------------------
+// 3. Utilidades
+// ----------------------
+function parseDate(str){
+    const [Y,M,D] = str.split("-").map(n=>parseInt(n,10));
+    return new Date(Y, M-1, D);
+}
+function formatISO(d){
+    return d.toISOString().slice(0,10);
+}
+
+// Converte "2012 T1" -> Date (fim do trimestre)
+function parsePeriodoToDate(periodo){
+    if(!periodo) return null;
+    const parts = periodo.trim().split(/\s+/);
+    if(parts.length < 2) return null;
+
+    const ano = parseInt(parts[0], 10);
+    const triMatch = periodo.match(/T(\d)/i);
+    const tri = triMatch ? parseInt(triMatch[1], 10) : null;
+
+    if(!ano || !tri) return null;
+
+    let mes = 12, dia = 31;
+    if(tri === 1){ mes = 3; dia = 31; }
+    else if(tri === 2){ mes = 6; dia = 30; }
+    else if(tri === 3){ mes = 9; dia = 30; }
+    else if(tri === 4){ mes = 12; dia = 31; }
+
+    return new Date(ano, mes-1, dia);
+}
+
+function periodoLabel(item){
+    return item.dataLabel;
+}
+
+function quebrarTitulo(abrangencia, variavel){
+    const base = `${abrangencia}: ${variavel}`;
+    return base.replace(": ", ":<br>");
+}
+
+// tendência linear simples (OLS)
+function calcTendencia(y){
+    const n = y.length;
+    const x = y.map((_,i)=>i);
+    const meanX = x.reduce((a,b)=>a+b,0)/n;
+    const meanY = y.reduce((a,b)=>a+b,0)/n;
+    let num=0, den=0;
+    for(let i=0;i<n;i++){
+        num += (x[i]-meanX)*(y[i]-meanY);
+        den += (x[i]-meanX)*(x[i]-meanX);
+    }
+    const a = den===0 ? 0 : num/den;
+    const b = meanY - a*meanX;
+    return x.map(xi=>a*xi+b);
+}
+
+// ----------------------
+// 4. Carregar CSV
+// ----------------------
+// Espera-se um arquivo chamado "dados_painel_pnad.csv"
+// com as colunas: Ano, Abrangência, Variável, Valor
+Papa.parse("dados_painel_pnad.csv", {
+    download: true,
+    header: true,
+    dynamicTyping: false,
+    complete: function(res){
+        DADOS = [];
+
+        res.data.forEach(row => {
+            const periodo = (row["Ano"] || "").toString().trim();
+            const abrang = (row["Abrangência"] || "").toString().trim();
+            const variavel = (row["Variável"] || "").toString().trim();
+            let valorStr = (row["Valor"] || "").toString().trim();
+
+            if(!periodo || !abrang || !variavel || !valorStr) return;
+
+            // trocar vírgula por ponto, se for decimal brasileiro
+            valorStr = valorStr.replace(",", ".");
+            const valor = parseFloat(valorStr);
+            if(isNaN(valor)) return;
+
+            const dataDate = parsePeriodoToDate(periodo);
+            if(!dataDate) return;
+
+            DADOS.push({
+                periodo: periodo,
+                dataLabel: periodo,
+                dataDate: dataDate,
+                abrangencia: abrang,
+                variavel: variavel,
+                valor: valor
+            });
+        });
+
+        popularVariaveis();
+        montarPainelGovernos(); // esqueleto
+        atualizarTudo();
+    }
+});
+
+// ----------------------
+// 5. Popular dropdown de variável
+// ----------------------
+function popularVariaveis(){
+    const sel = document.getElementById("variavel");
+    const vars = [...new Set(DADOS.map(d => d.variavel))].sort();
+    sel.innerHTML = "";
+    vars.forEach(v=>{
+        const opt=document.createElement("option");
+        opt.value=v;
+        opt.textContent=v;
+        sel.appendChild(opt);
+    });
+}
+
+// ----------------------
+// 6. Listeners de filtros
+// ----------------------
+document.getElementById("variavel").addEventListener("change", ()=>{
+    governoAtivo=null;
+    atualizarTudo();
+});
+document.querySelectorAll("input[name='abrangencia"]').forEach(el=>{
+    el.addEventListener("change", ()=>{
+        governoAtivo=null;
+        atualizarTudo();
+    });
+});
+document.getElementById("reset-governo").addEventListener("click", ()=>{
+    governoAtivo=null;
+    atualizarTudo();
+});
+
+// placeholder; conteúdo final é montado dentro de atualizarTudo()
+function montarPainelGovernos(){
+    const painel = document.getElementById("painel-governos");
+    painel.innerHTML = "";
+}
+
+// ----------------------
+// 7. Calcular intervalos dos governos na série atual
+// ----------------------
+function calcularIntervalosGovernos(govDefs, dadosSerieOrdenada){
+    const govs = [];
+    for(let i=0;i<govDefs.length;i++){
+        const g = govDefs[i];
+        const iniDate = parseDate(g.inicio);
+        const fimDate = (i<govDefs.length-1)
+            ? parseDate(govDefs[i+1].inicio)
+            : new Date("2026-01-01");
+
+        let idxIni=null, idxFim=null;
+        let idxIniLabel=null, idxFimLabel=null;
+
+        for(let k=0;k<dadosSerieOrdenada.length;k++){
+            const dt = dadosSerieOrdenada[k].dataDate;
+            if(dt>=iniDate && dt<fimDate){
+                if(idxIni===null){
+                    idxIni = k;
+                    idxIniLabel = periodoLabel(dadosSerieOrdenada[k]);
+                }
+                idxFim = k;
+                idxFimLabel = periodoLabel(dadosSerieOrdenada[k]);
+            }
+        }
+
+        govs.push({
+            nome:g.nome,
+            cor:g.cor,
+            inicioDate:iniDate,
+            fimDate:fimDate,
+            idxInicio:idxIni,
+            idxFim:idxFim,
+            idxInicioLabel:idxIniLabel,
+            idxFimLabel:idxFimLabel
+        });
+    }
+    return govs;
+}
+
+// ----------------------
+// 8. Atualização principal (gráfico + tabela + legenda)
+// ----------------------
+function atualizarTudo(){
+    const variavel = document.getElementById("variavel").value;
+    const abrangencia = document.querySelector("input[name='abrangencia']:checked").value;
+
+    // base filtrada por variável / abrangência
+    let base = DADOS.filter(d =>
+        d.variavel === variavel &&
+        d.abrangencia === abrangencia
+    );
+
+    // ordena temporalmente
+    base = base.slice().sort((a,b)=> a.dataDate - b.dataDate);
+
+    // info de governos com índices sobre a série COMPLETA (antes do corte por governoAtivo)
+    const govDefs = GOVERNOS[abrangencia];
+    let govInfos = calcularIntervalosGovernos(govDefs, base);
+
+    // se um governo foi clicado, restringe a base
+    if(governoAtivo){
+        const gsel = govInfos.find(g => g.nome === governoAtivo);
+        if(gsel){
+            base = base.filter(row => {
+                const dt = row.dataDate;
+                return dt >= gsel.inicioDate && dt < gsel.fimDate;
+            });
+        }
+    }
+
+    // montar eixos x/y
+    const xLabels = base.map(row => periodoLabel(row)); // "2012 T1" etc
+    const yVals = base.map(row => row.valor).filter(v=>!isNaN(v));
+
+    // média e tendência
+    let mediaVal = null;
+    let tendenciaVals = [];
+    if(yVals.length>0){
+        mediaVal = yVals.reduce((a,b)=>a+b,0)/yVals.length;
+        tendenciaVals = calcTendencia(yVals);
+    }
+
+    // shapes de governo
+    const shapes = [];
+    const govsVisiveis = governoAtivo
+        ? govInfos.filter(g=>g.nome===governoAtivo)
+        : govInfos;
+
+    govsVisiveis.forEach(g=>{
+        if(g.idxInicio!==null && g.idxFim!==null){
+            const x0 = g.idxInicioLabel;
+            const x1 = g.idxFimLabel;
+            shapes.push({
+                type:'rect',
+                xref:'x',
+                yref:'paper',
+                x0:x0,
+                x1:x1,
+                y0:0,
+                y1:1,
+                fillcolor:g.cor + '22',
+                line:{width:0}
+            });
+        }
+    });
+
+    // montar traces
+    const traces = [{
+        x:xLabels,
+        y:yVals,
+        mode:'lines+markers',
+        name:'Valor',
+        line:{color:'#1f77b4'}
+    }];
+    if(mediaVal!==null){
+        traces.push({
+            x:xLabels,
+            y:Array(yVals.length).fill(mediaVal),
+            mode:'lines',
+            name:'Média',
+            line:{color:'#1f77b4',dash:'dot'}
+        });
+    }
+    if(tendenciaVals.length===yVals.length){
+        traces.push({
+            x:xLabels,
+            y:tendenciaVals,
+            mode:'lines',
+            name:'Tendência',
+            line:{color:'#d62728',dash:'dash'}
+        });
+    }
+
+    Plotly.newPlot('grafico', traces, {
+        title: { text: quebrarTitulo(abrangencia, variavel), x:0.5, xanchor:'center' },
+        xaxis:{
+            title:'Período',
+            type:'category',
+            tickangle:-60
+        },
+        yaxis:{
+            title:'Valor'
+        },
+        shapes:shapes,
+        height:500,
+        margin:{l:60,r:20,t:90,b:120},
+        legend:{orientation:'v'}
+    },{
+        displaylogo:false,
+        responsive:true
+    });
+
+    // montar legenda lateral (botões de governo)
+    montarLegendaGovernos(govInfos);
+
+    // montar tabela dinâmica
+    montarTabela(govInfos, base);
+}
+
+// ----------------------
+// 9. Legenda lateral de governos clicável
+// ----------------------
+function montarLegendaGovernos(govInfos){
+    const painel = document.getElementById("painel-governos");
+    const btnReset = document.getElementById("reset-governo");
+    painel.innerHTML = "";
+
+    govInfos.forEach(g=>{
+        if(g.idxInicio===null) return;
+
+        const div = document.createElement("div");
+        div.className = "gov-item";
+        if(governoAtivo === g.nome) div.classList.add("ativo");
+        div.style.backgroundColor = g.cor;
+        div.textContent = g.nome;
+        div.title = `${g.nome}
+${formatISO(g.inicioDate)} → ${formatISO(g.fimDate)}`;
+
+        div.addEventListener("click", ()=>{
+            if(governoAtivo === g.nome){
+                governoAtivo = null;
+            } else {
+                governoAtivo = g.nome;
+            }
+            atualizarTudo();
+        });
+
+        painel.appendChild(div);
+    });
+
+    btnReset.style.display = governoAtivo ? "inline-block" : "none";
+}
+
+// ----------------------
+// 10. Montar tabela descritiva
+// ----------------------
+function montarTabela(govInfos, baseFiltradaFinal){
+    const tbody = document.querySelector("#tabela-estat tbody");
+    tbody.innerHTML = "";
+
+    const listaGov = governoAtivo
+        ? govInfos.filter(g=>g.nome===governoAtivo)
+        : govInfos;
+
+    const statsPorGoverno = [];
+
+    listaGov.forEach(g=>{
+        if(g.idxInicio===null) return;
+
+        const subset = baseFiltradaFinal.filter(row=>{
+            const dt = row.dataDate;
+            return dt>=g.inicioDate && dt<g.fimDate;
+        });
+
+        if(subset.length===0) return;
+
+        const valores = subset
+            .map(r=>r.valor)
+            .filter(v=>!isNaN(v));
+
+        if(!valores.length) return;
+
+        const media = valores.reduce((a,b)=>a+b,0)/valores.length;
+        const minimo = Math.min(...valores);
+        const maximo = Math.max(...valores);
+
+        let variacaoIntra = "–";
+        if(valores.length>1 && minimo!==0 && isFinite(minimo) && isFinite(maximo)){
+            const dif = (maximo - minimo) / minimo * 100;
+            variacaoIntra = dif.toFixed(1)+"%";
+        }
+
+        statsPorGoverno.push({
+            nome:g.nome,
+            inicio:g.inicioDate,
+            fim:g.fimDate,
+            media,
+            minimo,
+            maximo,
+            variacaoIntra
+        });
+    });
+
+    for(let i=0;i<statsPorGoverno.length;i++){
+        if(i===0){
+            statsPorGoverno[i].variacaoVsAnterior = "–";
+        } else {
+            const prevMedia = statsPorGoverno[i-1].media;
+            const curMedia = statsPorGoverno[i].media;
+            if(prevMedia!==0 && isFinite(prevMedia) && isFinite(curMedia)){
+                const dif = (curMedia - prevMedia) / prevMedia * 100;
+                statsPorGoverno[i].variacaoVsAnterior = dif.toFixed(1)+"%";
+            } else {
+                statsPorGoverno[i].variacaoVsAnterior = "–";
+            }
+        }
+    }
+
+    statsPorGoverno.forEach(st=>{
+        const linha = document.createElement("tr");
+        linha.innerHTML = `
+            <td style="font-weight:600;color:#222;">${st.nome}</td>
+            <td>${formatISO(st.inicio)}</td>
+            <td>${formatISO(st.fim)}</td>
+            <td>${st.media.toFixed(2)}</td>
+            <td>${st.minimo.toFixed(2)}</td>
+            <td>${st.maximo.toFixed(2)}</td>
+            <td>${st.variacaoIntra}</td>
+            <td>${st.variacaoVsAnterior}</td>
+        `;
+        tbody.appendChild(linha);
+    });
+}
+
+// ----------------------
+// 11. Rodapé - data de atualização
+// ----------------------
+(function atualizaDataRodape(){
+    const hoje = new Date();
+    const dataFormatada = hoje.toLocaleDateString('pt-BR', {
+        year:'numeric', month:'2-digit', day:'2-digit'
+    });
+    document.getElementById("data-atualizacao").textContent =
+        "📅 Atualizado em: " + dataFormatada;
+})();
+</script>
+
+</body>
+</html>
