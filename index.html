@@ -192,7 +192,7 @@ html_content = """<!DOCTYPE html>
         font-size:.8rem;
     }
     thead th{
-        background:var(--azul-escuro);
+        background:#002b5c;
         color:#fff;
         font-weight:600;
         text-align:center;
@@ -359,11 +359,11 @@ function formatISO(d){
 // Converte "2012 T1" -> Date (fim do trimestre)
 function parsePeriodoToDate(periodo){
     if(!periodo) return null;
-    const parts = periodo.trim().split(/\s+/);
+    const parts = periodo.trim().split(/\\s+/);
     if(parts.length < 2) return null;
 
     const ano = parseInt(parts[0], 10);
-    const triMatch = periodo.match(/T(\d)/i);
+    const triMatch = periodo.match(/T(\\d)/i);
     const tri = triMatch ? parseInt(triMatch[1], 10) : null;
 
     if(!ano || !tri) return null;
@@ -402,27 +402,60 @@ function calcTendencia(y){
     return x.map(xi=>a*xi+b);
 }
 
+// normalização simples para comparar nomes de colunas
+function normHeader(s){
+    return s.toString().toLowerCase().replace(/\\s+/g,"");
+}
+
 // ----------------------
 // 4. Carregar CSV
 // ----------------------
 // Espera-se um arquivo chamado "dados_painel_pnad.csv"
-// com as colunas: Ano, Abrangência, Variável, Valor
+// mas agora detectamos as colunas de forma robusta
 Papa.parse("dados_painel_pnad.csv", {
     download: true,
     header: true,
     dynamicTyping: false,
+    skipEmptyLines: true,
     complete: function(res){
+        const rows = res.data || [];
+        if(!rows.length){
+            console.warn("Nenhuma linha lida do CSV.");
+            return;
+        }
+
+        const colNames = Object.keys(rows[0]);
+        console.log("Colunas detectadas:", colNames);
+
+        function findCol(possiblePatterns){
+            for(const c of colNames){
+                const n = normHeader(c);
+                for(const p of possiblePatterns){
+                    if(n.indexOf(p) !== -1){
+                        return c;
+                    }
+                }
+            }
+            return null;
+        }
+
+        const colAno    = findCol(["ano"]);
+        const colAbrang = findCol(["abrang"]);
+        const colVar    = findCol(["vari"]);
+        const colValor  = findCol(["valor"]);
+
+        console.log("Mapeamento de colunas:", {colAno, colAbrang, colVar, colValor});
+
         DADOS = [];
 
-        res.data.forEach(row => {
-            const periodo = (row["Ano"] || "").toString().trim();
-            const abrang = (row["Abrangência"] || "").toString().trim();
-            const variavel = (row["Variável"] || "").toString().trim();
-            let valorStr = (row["Valor"] || "").toString().trim();
+        rows.forEach(row => {
+            const periodo = colAno ? (row[colAno] || "").toString().trim() : "";
+            const abrang  = colAbrang ? (row[colAbrang] || "").toString().trim() : "";
+            const variavel= colVar ? (row[colVar] || "").toString().trim() : "";
+            let   valorStr= colValor ? (row[colValor] || "").toString().trim() : "";
 
             if(!periodo || !abrang || !variavel || !valorStr) return;
 
-            // trocar vírgula por ponto, se for decimal brasileiro
             valorStr = valorStr.replace(",", ".");
             const valor = parseFloat(valorStr);
             if(isNaN(valor)) return;
@@ -439,6 +472,13 @@ Papa.parse("dados_painel_pnad.csv", {
                 valor: valor
             });
         });
+
+        console.log("Total de registros válidos em DADOS:", DADOS.length);
+
+        if(!DADOS.length){
+            alert("Não foi possível carregar dados válidos do CSV. Verifique o arquivo 'dados_painel_pnad.csv'.");
+            return;
+        }
 
         popularVariaveis();
         montarPainelGovernos(); // esqueleto
@@ -468,7 +508,7 @@ document.getElementById("variavel").addEventListener("change", ()=>{
     governoAtivo=null;
     atualizarTudo();
 });
-document.querySelectorAll("input[name='abrangencia"]').forEach(el=>{
+document.querySelectorAll("input[name='abrangencia']").forEach(el=>{
     el.addEventListener("change", ()=>{
         governoAtivo=null;
         atualizarTudo();
@@ -533,20 +573,16 @@ function atualizarTudo(){
     const variavel = document.getElementById("variavel").value;
     const abrangencia = document.querySelector("input[name='abrangencia']:checked").value;
 
-    // base filtrada por variável / abrangência
     let base = DADOS.filter(d =>
         d.variavel === variavel &&
         d.abrangencia === abrangencia
     );
 
-    // ordena temporalmente
     base = base.slice().sort((a,b)=> a.dataDate - b.dataDate);
 
-    // info de governos com índices sobre a série COMPLETA (antes do corte por governoAtivo)
     const govDefs = GOVERNOS[abrangencia];
     let govInfos = calcularIntervalosGovernos(govDefs, base);
 
-    // se um governo foi clicado, restringe a base
     if(governoAtivo){
         const gsel = govInfos.find(g => g.nome === governoAtivo);
         if(gsel){
@@ -557,11 +593,9 @@ function atualizarTudo(){
         }
     }
 
-    // montar eixos x/y
-    const xLabels = base.map(row => periodoLabel(row)); // "2012 T1" etc
+    const xLabels = base.map(row => periodoLabel(row));
     const yVals = base.map(row => row.valor).filter(v=>!isNaN(v));
 
-    // média e tendência
     let mediaVal = null;
     let tendenciaVals = [];
     if(yVals.length>0){
@@ -569,7 +603,6 @@ function atualizarTudo(){
         tendenciaVals = calcTendencia(yVals);
     }
 
-    // shapes de governo
     const shapes = [];
     const govsVisiveis = governoAtivo
         ? govInfos.filter(g=>g.nome===governoAtivo)
@@ -593,7 +626,6 @@ function atualizarTudo(){
         }
     });
 
-    // montar traces
     const traces = [{
         x:xLabels,
         y:yVals,
@@ -622,14 +654,8 @@ function atualizarTudo(){
 
     Plotly.newPlot('grafico', traces, {
         title: { text: quebrarTitulo(abrangencia, variavel), x:0.5, xanchor:'center' },
-        xaxis:{
-            title:'Período',
-            type:'category',
-            tickangle:-60
-        },
-        yaxis:{
-            title:'Valor'
-        },
+        xaxis:{ title:'Período', type:'category', tickangle:-60 },
+        yaxis:{ title:'Valor' },
         shapes:shapes,
         height:500,
         margin:{l:60,r:20,t:90,b:120},
@@ -639,10 +665,7 @@ function atualizarTudo(){
         responsive:true
     });
 
-    // montar legenda lateral (botões de governo)
     montarLegendaGovernos(govInfos);
-
-    // montar tabela dinâmica
     montarTabela(govInfos, base);
 }
 
@@ -662,7 +685,7 @@ function montarLegendaGovernos(govInfos){
         if(governoAtivo === g.nome) div.classList.add("ativo");
         div.style.backgroundColor = g.cor;
         div.textContent = g.nome;
-        div.title = `${g.nome}\n${formatISO(g.inicioDate)} → ${formatISO(g.fimDate)}`;
+        div.title = `${g.nome}\\n${formatISO(g.inicioDate)} → ${formatISO(g.fimDate)}`;
 
         div.addEventListener("click", ()=>{
             if(governoAtivo === g.nome){
@@ -781,3 +804,4 @@ with open("/mnt/data/index.html", "w", encoding="utf-8") as f:
     f.write(html_content)
 
 "/mnt/data/index.html"
+
